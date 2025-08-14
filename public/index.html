@@ -1,34 +1,44 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Modern Chat App</title>
-<link href="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1.5.2/dist/emoji-picker-element.min.js" rel="stylesheet">
+
+<!-- Emoji Picker Module -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1.5.2/dist/emoji-picker.min.js"></script>
+
 <style>
-  body { margin:0; font-family: Arial, sans-serif; background:#f0f2f5; display:flex; height:100vh; }
-  #sidebar { width:200px; background:#fff; border-right:1px solid #ddd; display:flex; flex-direction:column; padding:10px; }
+  body { margin:0; font-family: Arial, sans-serif; background:#f0f2f5; display:flex; height:100vh; transition: background 0.3s, color 0.3s;}
+  body.dark { background:#18191a; color:#e4e6eb;}
+  #sidebar { width:200px; background:#fff; border-right:1px solid #ddd; display:flex; flex-direction:column; padding:10px; transition: background 0.3s, color 0.3s;}
+  #sidebar.dark { background:#242526; color:#e4e6eb;}
   #sidebar h2 { margin:0 0 10px 0; font-size:18px; }
   #users { flex:1; overflow-y:auto; }
   #chat-container { flex:1; display:flex; flex-direction:column; }
   #chat { flex:1; padding:10px; overflow-y:auto; }
-  .message { margin:5px 0; padding:8px 12px; border-radius:15px; max-width:70%; }
+  .message { margin:5px 0; padding:8px 12px; border-radius:15px; max-width:70%; word-wrap: break-word; }
   .self { background:#4CAF50; color:#fff; align-self:flex-end; }
   .other { background:#e4e6eb; align-self:flex-start; }
   .system { background:#ffd700; color:#000; text-align:center; border-radius:10px; max-width:100%; margin:5px auto; }
+  body.dark .other { background:#3a3b3c; color:#e4e6eb; }
+  body.dark .system { background:#ffa500; color:#000; }
   #typing { font-style:italic; color:#666; margin-bottom:5px; }
-  #input-bar { display:flex; padding:10px; border-top:1px solid #ddd; background:#fff; }
+  #input-bar { display:flex; padding:10px; border-top:1px solid #ddd; background:#fff; transition: background 0.3s; position: relative; }
+  body.dark #input-bar { background:#242526; }
   #message { flex:1; padding:8px; border-radius:20px; border:1px solid #ccc; }
   #send { margin-left:5px; padding:8px 15px; border:none; background:#4CAF50; color:#fff; border-radius:20px; cursor:pointer; }
   #send:hover { background:#45a049; }
-  emoji-picker { position: absolute; bottom:60px; }
+  #dark-toggle { margin-top:10px; padding:5px; cursor:pointer; border:1px solid #ccc; border-radius:5px; background:#ddd; }
+  body.dark #dark-toggle { background:#3a3b3c; color:#e4e6eb; border-color:#555; }
+  emoji-picker { position:absolute; bottom:60px; right:10px; display:none; z-index:1000; }
 </style>
 </head>
 <body>
 <div id="sidebar">
   <h2>Users Online</h2>
   <div id="users"></div>
+  <button id="dark-toggle">Toggle Dark Mode</button>
 </div>
 <div id="chat-container">
   <div id="chat"></div>
@@ -37,7 +47,7 @@
     <input id="message" autocomplete="off" placeholder="Type your message..." />
     <button id="emoji-btn">😊</button>
     <button id="send">Send</button>
-    <emoji-picker style="display:none;"></emoji-picker>
+    <emoji-picker id="emoji-picker"></emoji-picker>
   </div>
 </div>
 
@@ -50,11 +60,21 @@
   const messageInput = document.getElementById('message');
   const sendBtn = document.getElementById('send');
   const emojiBtn = document.getElementById('emoji-btn');
-  const emojiPicker = document.querySelector('emoji-picker');
+  const emojiPicker = document.getElementById('emoji-picker');
+  const darkToggle = document.getElementById('dark-toggle');
 
+  // Dark mode persistence
+  if(localStorage.getItem('dark')==='true') document.body.classList.add('dark');
+  darkToggle.addEventListener('click', () => {
+    document.body.classList.toggle('dark');
+    localStorage.setItem('dark', document.body.classList.contains('dark'));
+  });
+
+  // Set nickname
   let nickname = prompt('Enter your nickname') || 'Anonymous';
   socket.emit('set nickname', nickname);
 
+  // Receive chat messages
   socket.on('chat message', data => {
     const div = document.createElement('div');
     if(data.system){
@@ -68,22 +88,40 @@
     chat.scrollTop = chat.scrollHeight;
   });
 
+  // Update user list
   socket.on('update users', list => {
     usersDiv.innerHTML = '';
-    list.forEach(u => { const d=document.createElement('div'); d.textContent=u; usersDiv.appendChild(d); });
+    list.forEach(u => {
+      const d = document.createElement('div');
+      d.textContent = u;
+      usersDiv.appendChild(d);
+    });
   });
 
+  // Send messages
   sendBtn.addEventListener('click', () => {
-    if(messageInput.value){ socket.emit('chat message', messageInput.value); messageInput.value=''; socket.emit('typing', false); }
+    if(messageInput.value){
+      socket.emit('chat message', messageInput.value);
+      messageInput.value='';
+      socket.emit('typing', false);
+    }
   });
-
-  messageInput.addEventListener('input', () => { socket.emit('typing', messageInput.value.length>0); });
   messageInput.addEventListener('keypress', e => { if(e.key==='Enter'){ e.preventDefault(); sendBtn.click(); } });
 
+  // Typing indicator
+  messageInput.addEventListener('input', () => { socket.emit('typing', messageInput.value.length>0); });
   socket.on('typing', data => { typingDiv.textContent = data.status ? `${data.user} is typing...` : ''; });
 
-  emojiBtn.addEventListener('click', () => { emojiPicker.style.display = emojiPicker.style.display==='none'?'block':'none'; });
-  emojiPicker.addEventListener('emoji-click', e => { messageInput.value += e.detail.unicode; emojiPicker.style.display='none'; messageInput.focus(); });
+  // Emoji picker toggle
+  emojiBtn.addEventListener('click', () => {
+    emojiPicker.style.display = emojiPicker.style.display==='none'?'block':'none';
+  });
+
+  emojiPicker.addEventListener('emoji-click', e => {
+    messageInput.value += e.detail.unicode;
+    emojiPicker.style.display='none';
+    messageInput.focus();
+  });
 </script>
 </body>
 </html>
